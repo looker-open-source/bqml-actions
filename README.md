@@ -27,7 +27,7 @@ The only variable you need to modify is the `PROJECT` ID you want to deploy the 
 1. Clone this repo
 
    ```
-   git clone git@github.com:looker-open-source/bqml-actions.git
+   git clone https://github.com/looker-open-source/bqml-actions.git
    cd bqml-actions/
    ```
 
