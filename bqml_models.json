@@ -1,0 +1,32 @@
+[
+  {
+    "description": "BigQuery ML model name",
+    "mode": "REQUIRED",
+    "name": "model_name",
+    "type": "STRING"
+  },
+  {
+    "description": "When model was created",
+    "mode": "REQUIRED",
+    "name": "created_at",
+    "type": "TIMESTAMP"
+  },
+  {
+    "description": "BigQuery ML model type",
+    "mode": "REQUIRED",
+    "name": "model_type",
+    "type": "STRING"
+  },
+  {
+    "description": "The label column names in the training data (INPUT_LABEL_COLS)",
+    "mode": "REQUIRED",
+    "name": "target_column",
+    "type": "STRING"
+  },
+  {
+    "description": "SQL query used to create model",
+    "mode": "REQUIRED",
+    "name": "sql_text",
+    "type": "STRING"
+  }
+]
