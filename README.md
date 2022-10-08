@@ -10,11 +10,13 @@ An additional function `predict` can be used to return predictions dynamically b
 
 ## Installation:
 
+_Before following the steps below, make sure you have enabled the [Secret Manager API](https://console.cloud.google.com/flows/enableapi?apiid=secretmanager.googleapis.com), [Cloud Build API](https://console.cloud.google.com/flows/enableapi?apiid=cloudbuild.googleapis.com), and the [Cloud Functions API](https://console.cloud.google.com/flows/enableapi?apiid=cloudfunctions.googleapis.com). It will take a few minutes after enabling this APIs for it to propagate through the systems._
+
 Use [Cloud Shell](https://cloud.google.com/shell) or the [`gcloud CLI`](https://cloud.google.com/sdk/docs/install) for the following steps.
 
 The only variable you need to modify is the `PROJECT` ID you want to deploy the Cloud Functions to. Update the `REGION` and `DATASET` if you wish to change this from the default values.
 
-1. Specify REGION, PROJECT, and DATASET variables below
+1. Set the variables below:
 
    ```
    ACTION_LABEL="BigQuery ML Generator"
@@ -31,10 +33,10 @@ The only variable you need to modify is the `PROJECT` ID you want to deploy the 
    cd bqml-actions/
    ```
 
-1. Create a [.env.yaml](.env.yaml.example) with required variables:
+1. Create a [.env.yaml](.env.yaml.example) with variables:
 
    ```
-   printf "ACTION_LABEL=${ACTION_LABEL}\nACTION_NAME=${ACTION_NAME}\nREGION=${REGION}\nPROJECT=${PROJECT}\nDATASET=${DATASET}" > .env.yaml
+   printf "ACTION_LABEL: ${ACTION_LABEL}\nACTION_NAME: ${ACTION_NAME}\nREGION: ${REGION}\nPROJECT: ${PROJECT}\nDATASET: ${DATASET}" > .env.yaml
    ```
 
 1. Generate the LOOKER_AUTH_TOKEN secret. The auth token secret can be any randomly generated string. You can generate such a string with the openssl command:
@@ -43,11 +45,20 @@ The only variable you need to modify is the `PROJECT` ID you want to deploy the 
    LOOKER_AUTH_TOKEN="`openssl rand -hex 64`"
    ```
 
-1. Create the secret and grant access to the Cloud Function service account (by [default](https://cloud.google.com/functions/docs/securing/function-identity#runtime_service_account) the "App Engine default service account"):
+1. Add the Auth Token as a Secret, then create a Service Account to run the Cloud Functions and give it access to the Secret:
 
    ```
    printf ${LOOKER_AUTH_TOKEN} | gcloud secrets create LOOKER_AUTH_TOKEN --data-file=- --replication-policy=user-managed --locations=${REGION} --project=${PROJECT}
-   gcloud secrets add-iam-policy-binding LOOKER_AUTH_TOKEN --member=serviceAccount:${PROJECT}@appspot.gserviceaccount.com --role="roles/secretmanager.secretAccessor --project=${PROJECT}"
+
+   gcloud iam service-accounts create bqml-actions-cloud-functions --display-name="BQML Actions Cloud Functions"
+
+   SERVICE_ACCOUNT_EMAIL=bqml-actions-cloud-functions@${PROJECT}.iam.gserviceaccount.com
+
+   eval gcloud projects add-iam-policy-binding ${PROJECT} --member=serviceAccount:${SERVICE_ACCOUNT_EMAIL} --role='roles/cloudfunctions.invoker'
+
+   eval gcloud projects add-iam-policy-binding ${PROJECT} --member=serviceAccount:${SERVICE_ACCOUNT_EMAIL} --role='roles/secretmanager.secretAccessor'
+
+   eval gcloud secrets add-iam-policy-binding LOOKER_AUTH_TOKEN --member=serviceAccount:${SERVICE_ACCOUNT_EMAIL} --role='roles/secretmanager.secretAccessor' --project=${PROJECT}
    ```
 
 1. Create a dataset and `bqml_models` table for generated models and models table to store metadata on generated BigQuery models and corresponding views:
@@ -60,10 +71,13 @@ The only variable you need to modify is the `PROJECT` ID you want to deploy the 
 1. Deploy 4 cloud functions for action hub listing, action form, action execute, and predictions (this may take a few minutes):
 
    ```
-   gcloud functions deploy bigquery-ml-generator-list --entry-point action_list --env-vars-file .env.yaml --trigger-http --runtime=python38 --allow-unauthenticated --timeout=540s --region=${REGION} --project=${PROJECT} --set-secrets 'LOOKER_AUTH_TOKEN=LOOKER_AUTH_TOKEN:latest'
-   gcloud functions deploy bigquery-ml-generator-form --entry-point action_form --env-vars-file .env.yaml --trigger-http --runtime=python38 --allow-unauthenticated --timeout=540s --region=${REGION} --project=${PROJECT} --set-secrets 'LOOKER_AUTH_TOKEN=LOOKER_AUTH_TOKEN:latest'
-   gcloud functions deploy bigquery-ml-generator-execute --entry-point action_execute --env-vars-file .env.yaml --trigger-http --runtime=python38 --allow-unauthenticated --timeout=540s --region=${REGION} --project=${PROJECT} --set-secrets 'LOOKER_AUTH_TOKEN=LOOKER_AUTH_TOKEN:latest'
-   gcloud functions deploy bigquery-ml-generator-predict --entry-point predict --env-vars-file .env.yaml --trigger-http --runtime=python38 --allow-unauthenticated --timeout=540s --region=${REGION} --project=${PROJECT} --set-secrets 'LOOKER_AUTH_TOKEN=LOOKER_AUTH_TOKEN:latest'
+   gcloud functions deploy bigquery-ml-generator-list --entry-point action_list --env-vars-file .env.yaml --trigger-http --runtime=python38 --allow-unauthenticated --timeout=540s --region=${REGION} --project=${PROJECT} --service-account ${SERVICE_ACCOUNT_EMAIL} --set-secrets 'LOOKER_AUTH_TOKEN=LOOKER_AUTH_TOKEN:latest'
+
+   gcloud functions deploy bigquery-ml-generator-form --entry-point action_form --env-vars-file .env.yaml --trigger-http --runtime=python38 --allow-unauthenticated --timeout=540s --region=${REGION} --project=${PROJECT} --service-account ${SERVICE_ACCOUNT_EMAIL} --set-secrets 'LOOKER_AUTH_TOKEN=LOOKER_AUTH_TOKEN:latest'
+
+   gcloud functions deploy bigquery-ml-generator-execute --entry-point action_execute --env-vars-file .env.yaml --trigger-http --runtime=python38 --allow-unauthenticated --timeout=540s --region=${REGION} --project=${PROJECT} --service-account ${SERVICE_ACCOUNT_EMAIL} --set-secrets 'LOOKER_AUTH_TOKEN=LOOKER_AUTH_TOKEN:latest'
+
+   gcloud functions deploy bigquery-ml-generator-predict --entry-point predict --env-vars-file .env.yaml --trigger-http --runtime=python38 --allow-unauthenticated --timeout=540s --region=${REGION} --project=${PROJECT} --service-account ${SERVICE_ACCOUNT_EMAIL} --set-secrets 'LOOKER_AUTH_TOKEN=LOOKER_AUTH_TOKEN:latest'
    ```
 
 1. Copy the Action Hub URL (`action_list` endpoint) and the `LOOKER_AUTH_TOKEN` to input into Looker:
@@ -89,7 +103,7 @@ The only variable you need to modify is the `PROJECT` ID you want to deploy the 
 
      </details>
 
-   - Send to the BigQuery ML Generator destination:
+   - Send to the BigQuery ML Generator destination. Specify the model type, model parameters, and the model name, ID column, and target column. The columns should be the SQL column names:
      ![BQML Form](docs/BQML-form.png)
 
 ## Predictions:
@@ -101,7 +115,12 @@ Predictions can be made in an Explore query or via the `predict` Cloud Function.
 
 - Using the `predict` Cloud Function directly - you can dynamically send data to run predictions on the fly, e.g.:
   ![BQML Predict Webhook](docs/BQML-predict-webhook.png)
-- Make sure to include the auth token in the following format: `Authorization: Token token="${LOOKER_AUTH_TOKEN}"`
+
+  Make sure to include the auth token in the header in following format:
+
+  ```
+  Authorization: Token token="${LOOKER_AUTH_TOKEN}"
+  ```
 
 ## Troubleshooting:
 
