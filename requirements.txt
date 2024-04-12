@@ -12,7 +12,7 @@ google-resumable-media==2.6.0
 googleapis-common-protos==1.61.0
 grpcio==1.59.2
 grpcio-status==1.59.2
-idna==3.4
+idna==3.7
 importlib-metadata==6.8.0
 itsdangerous==2.1.2
 Jinja2==3.1.2
